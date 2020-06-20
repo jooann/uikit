@@ -1,5 +1,4 @@
 import SVG from './svg';
-import Class from '../mixin/class';
 import closeIcon from '../../images/components/close-icon.svg';
 import closeLarge from '../../images/components/close-large.svg';
 import marker from '../../images/components/marker.svg';
@@ -18,7 +17,6 @@ import spinner from '../../images/components/spinner.svg';
 import totop from '../../images/components/totop.svg';
 import {$, addClass, apply, css, each, hasClass, hyphenate, isRtl, isString, noop, parents, Promise, swap} from 'uikit-util';
 
-const parsed = {};
 const icons = {
     spinner,
     totop,
@@ -42,19 +40,19 @@ const Icon = {
 
     install,
 
-    attrs: ['icon', 'ratio'],
-
-    mixins: [Class, SVG],
+    extends: SVG,
 
     args: 'icon',
 
     props: ['icon'],
 
-    data: {exclude: ['id', 'style', 'class', 'src', 'icon', 'ratio']},
+    data: {
+        include: ['focusable']
+    },
 
     isIcon: true,
 
-    connected() {
+    beforeConnect() {
         addClass(this.$el, 'uk-icon');
     },
 
@@ -62,7 +60,7 @@ const Icon = {
 
         getSvg() {
 
-            const icon = getIcon(applyRtl(this.icon));
+            const icon = getIcon(this.icon);
 
             if (!icon) {
                 return Promise.reject('Icon not found.');
@@ -79,11 +77,17 @@ export default Icon;
 
 export const IconComponent = {
 
+    args: false,
+
     extends: Icon,
 
     data: vm => ({
         icon: hyphenate(vm.constructor.options.name)
-    })
+    }),
+
+    beforeConnect() {
+        addClass(this.$el, this.$name);
+    }
 
 };
 
@@ -91,7 +95,7 @@ export const Slidenav = {
 
     extends: IconComponent,
 
-    connected() {
+    beforeConnect() {
         addClass(this.$el, 'uk-slidenav');
     },
 
@@ -149,6 +153,7 @@ export const Spinner = {
 
 };
 
+const parsed = {};
 function install(UIkit) {
     UIkit.icon.add = (name, svg) => {
 
@@ -160,9 +165,9 @@ function install(UIkit) {
 
         if (UIkit._initialized) {
             apply(document.body, el =>
-                each(UIkit.getComponents(el), cmp =>
-                    cmp.$options.isIcon && cmp.icon in added && cmp.$reset()
-                )
+                each(UIkit.getComponents(el), cmp => {
+                    cmp.$options.isIcon && cmp.icon in added && cmp.$reset();
+                })
             );
         }
     };
@@ -175,10 +180,10 @@ function getIcon(icon) {
     }
 
     if (!parsed[icon]) {
-        parsed[icon] = $(icons[icon].trim());
+        parsed[icon] = $((icons[applyRtl(icon)] || icons[icon]).trim());
     }
 
-    return parsed[icon];
+    return parsed[icon].cloneNode(true);
 }
 
 function applyRtl(icon) {

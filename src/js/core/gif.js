@@ -17,10 +17,10 @@ export default {
         },
 
         write() {
-            this.$el.src = this.$el.src;
+            this.$el.src = '' + this.$el.src; // force self-assign
         },
 
-        events: ['scroll', 'load', 'resize']
+        events: ['scroll', 'resize']
     }
 
 };

@@ -1,4 +1,4 @@
-import {$, apply, createEvent, isString, mergeOptions, toNode} from 'uikit-util';
+import {$, apply, isString, mergeOptions, parents, toNode} from 'uikit-util';
 
 export default function (UIkit) {
 
@@ -26,7 +26,7 @@ export default function (UIkit) {
         options = options || {};
 
         const Super = this;
-        const Sub = function UIkitComponent (options) {
+        const Sub = function UIkitComponent(options) {
             this._init(options);
         };
 
@@ -42,10 +42,9 @@ export default function (UIkit) {
 
     UIkit.update = function (element, e) {
 
-        e = createEvent(e || 'update');
         element = element ? toNode(element) : document.body;
 
-        path(element).map(element => update(element[DATA], e));
+        parents(element).reverse().forEach(element => update(element[DATA], e));
         apply(element, element => update(element[DATA], e));
 
     };
@@ -76,18 +75,4 @@ export default function (UIkit) {
         }
 
     }
-
-    function path(element) {
-        const path = [];
-
-        while (element && element !== document.body && element.parentNode) {
-
-            element = element.parentNode;
-            path.unshift(element);
-
-        }
-
-        return path;
-    }
-
 }

@@ -1,6 +1,4 @@
-import {append, apply, closest, css, pointerEnter, pointerLeave, remove, toFloat, Transition, trigger} from 'uikit-util';
-
-const containers = {};
+import {$, append, apply, closest, css, pointerEnter, pointerLeave, remove, startsWith, toFloat, Transition, trigger} from 'uikit-util';
 
 export default {
 
@@ -14,35 +12,45 @@ export default {
         timeout: 5000,
         group: null,
         pos: 'top-center',
+        clsContainer: 'uk-notification',
         clsClose: 'uk-notification-close',
         clsMsg: 'uk-notification-message'
     },
 
     install,
 
-    created() {
+    computed: {
 
-        if (!containers[this.pos]) {
-            containers[this.pos] = append(this.$container, `<div class="uk-notification uk-notification-${this.pos}"></div>`);
+        marginProp({pos}) {
+            return `margin${startsWith(pos, 'top') ? 'Top' : 'Bottom'}`;
+        },
+
+        startProps() {
+            return {opacity: 0, [this.marginProp]: -this.$el.offsetHeight};
         }
 
-        const container = css(containers[this.pos], 'display', 'block');
+    },
+
+    created() {
+
+        const container = $(`.${this.clsContainer}-${this.pos}`, this.$container)
+            || append(this.$container, `<div class="${this.clsContainer} ${this.clsContainer}-${this.pos}" style="display: block"></div>`);
 
         this.$mount(append(container,
             `<div class="${this.clsMsg}${this.status ? ` ${this.clsMsg}-${this.status}` : ''}">
-                    <a href="#" class="${this.clsClose}" data-uk-close></a>
-                    <div>${this.message}</div>
-                </div>`
+                <a href class="${this.clsClose}" data-uk-close></a>
+                <div>${this.message}</div>
+            </div>`
         ));
 
     },
 
     connected() {
 
-        const marginBottom = toFloat(css(this.$el, 'marginBottom'));
+        const margin = toFloat(css(this.$el, this.marginProp));
         Transition.start(
-            css(this.$el, {opacity: 0, marginTop: -this.$el.offsetHeight, marginBottom: 0}),
-            {opacity: 1, marginTop: 0, marginBottom}
+            css(this.$el, this.startProps),
+            {opacity: 1, [this.marginProp]: margin}
         ).then(() => {
             if (this.timeout) {
                 this.timer = setTimeout(this.close, this.timeout);
@@ -54,7 +62,7 @@ export default {
     events: {
 
         click(e) {
-            if (closest(e.target, 'a[href="#"]')) {
+            if (closest(e.target, 'a[href="#"],a[href=""]')) {
                 e.preventDefault();
             }
             this.close();
@@ -80,11 +88,13 @@ export default {
 
             const removeFn = () => {
 
+                const container = this.$el.parentNode;
+
                 trigger(this.$el, 'close', [this]);
                 remove(this.$el);
 
-                if (!containers[this.pos].children.length) {
-                    css(containers[this.pos], 'display', 'none');
+                if (container && !container.hasChildNodes()) {
+                    remove(container);
                 }
 
             };
@@ -96,11 +106,7 @@ export default {
             if (immediate) {
                 removeFn();
             } else {
-                Transition.start(this.$el, {
-                    opacity: 0,
-                    marginTop: -this.$el.offsetHeight,
-                    marginBottom: 0
-                }).then(removeFn);
+                Transition.start(this.$el, this.startProps).then(removeFn);
             }
         }
 

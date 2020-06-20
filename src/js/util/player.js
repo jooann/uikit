@@ -128,24 +128,17 @@ function post(el, cmd) {
 
 function listen(cb) {
 
-    return new Promise(resolve => {
+    return new Promise(resolve =>
 
         once(window, 'message', (_, data) => resolve(data), false, ({data}) => {
 
-            if (!data || !isString(data)) {
-                return;
-            }
-
             try {
                 data = JSON.parse(data);
-            } catch (e) {
-                return;
-            }
+                return data && cb(data);
+            } catch (e) {}
 
-            return data && cb(data);
+        })
 
-        });
-
-    });
+    );
 
 }

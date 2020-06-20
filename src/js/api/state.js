@@ -1,4 +1,4 @@
-import {assign, bind, camelize, data as getData, hasOwn, hyphenate, isArray, isBoolean, isFunction, isPlainObject, isString, isUndefined, mergeOptions, on, parseOptions, startsWith, toBoolean, toList, toNumber} from 'uikit-util';
+import {assign, camelize, data as getData, hasOwn, hyphenate, isArray, isEmpty, isFunction, isPlainObject, isString, isUndefined, mergeOptions, on, parseOptions, startsWith, toBoolean, toList, toNumber} from 'uikit-util';
 
 export default function (UIkit) {
 
@@ -12,9 +12,6 @@ export default function (UIkit) {
         this.$options = mergeOptions(this.constructor.options, options, this);
         this.$el = null;
         this.$props = {};
-
-        this._frames = {reads: {}, writes: {}};
-        this._events = [];
 
         this._uid = uid++;
         this._initData();
@@ -42,7 +39,7 @@ export default function (UIkit) {
 
         if (methods) {
             for (const key in methods) {
-                this[key] = bind(methods[key], this);
+                this[key] = methods[key].bind(this);
             }
         }
     };
@@ -51,7 +48,7 @@ export default function (UIkit) {
 
         const {computed} = this.$options;
 
-        this._resetComputeds();
+        this._computeds = {};
 
         if (computed) {
             for (const key in computed) {
@@ -60,15 +57,9 @@ export default function (UIkit) {
         }
     };
 
-    UIkit.prototype._resetComputeds = function () {
-        this._computeds = {};
-    };
-
     UIkit.prototype._initProps = function (props) {
 
         let key;
-
-        this._resetComputeds();
 
         props = props || getProps(this.$options, this.$name);
 
@@ -87,6 +78,8 @@ export default function (UIkit) {
     };
 
     UIkit.prototype._initEvents = function () {
+
+        this._events = [];
 
         const {events} = this.$options;
 
@@ -108,7 +101,7 @@ export default function (UIkit) {
 
     UIkit.prototype._unbindEvents = function () {
         this._events.forEach(unbind => unbind());
-        this._events = [];
+        delete this._events;
     };
 
     UIkit.prototype._initObserver = function () {
@@ -120,10 +113,14 @@ export default function (UIkit) {
 
         attrs = isArray(attrs) ? attrs : Object.keys(props);
 
-        this._observer = new MutationObserver(() => {
-
+        this._observer = new MutationObserver(records => {
             const data = getProps(this.$options, this.$name);
-            if (attrs.some(key => !isUndefined(data[key]) && data[key] !== this.$props[key])) {
+            if (records.some(({attributeName}) => {
+                const prop = attributeName.replace('data-', '');
+                return (prop === this.$name ? attrs : [camelize(prop), camelize(attributeName)]).some(prop =>
+                    !isUndefined(data[prop]) && data[prop] !== this.$props[prop]
+                );
+            })) {
                 this.$reset();
             }
 
@@ -150,18 +147,19 @@ export default function (UIkit) {
             const prop = hyphenate(key);
             let value = getData(el, prop);
 
-            if (!isUndefined(value)) {
-
-                value = props[key] === Boolean && value === ''
-                    ? true
-                    : coerce(props[key], value);
-
-                if (prop === 'target' && (!value || startsWith(value, '_'))) {
-                    continue;
-                }
-
-                data[key] = value;
+            if (isUndefined(value)) {
+                continue;
             }
+
+            value = props[key] === Boolean && value === ''
+                ? true
+                : coerce(props[key], value);
+
+            if (prop === 'target' && (!value || startsWith(value, '_'))) {
+                continue;
+            }
+
+            data[key] = value;
         }
 
         const options = parseOptions(getData(el, name), args);
@@ -186,14 +184,21 @@ export default function (UIkit) {
                 const {_computeds, $props, $el} = component;
 
                 if (!hasOwn(_computeds, key)) {
-                    _computeds[key] = cb.call(component, $props, $el);
+                    _computeds[key] = (cb.get || cb).call(component, $props, $el);
                 }
 
                 return _computeds[key];
             },
 
             set(value) {
-                component._computeds[key] = value;
+
+                const {_computeds} = component;
+
+                _computeds[key] = cb.set ? cb.set.call(component, value) : value;
+
+                if (isUndefined(_computeds[key])) {
+                    delete _computeds[key];
+                }
             }
 
         });
@@ -219,12 +224,6 @@ export default function (UIkit) {
             return;
         }
 
-        handler = detail(isString(handler) ? component[handler] : bind(handler, component));
-
-        if (self) {
-            handler = selfFilter(handler);
-        }
-
         component._events.push(
             on(
                 el,
@@ -234,29 +233,15 @@ export default function (UIkit) {
                     : isString(delegate)
                         ? delegate
                         : delegate.call(component),
-                handler,
-                isBoolean(passive)
-                    ? {passive, capture}
-                    : capture
+                isString(handler) ? component[handler] : handler.bind(component),
+                {passive, capture, self}
             )
         );
 
     }
 
-    function selfFilter(handler) {
-        return function selfHandler(e) {
-            if (e.target === e.currentTarget || e.target === e.current) {
-                return handler.call(null, e);
-            }
-        };
-    }
-
     function notIn(options, key) {
         return options.every(arr => !arr || !hasOwn(arr, key));
-    }
-
-    function detail(listener) {
-        return e => isArray(e.detail) ? listener(...[e].concat(e.detail)) : listener(e);
     }
 
     function coerce(type, value) {
@@ -274,7 +259,7 @@ export default function (UIkit) {
 
     function normalizeData({data, el}, {args, props = {}}) {
         data = isArray(data)
-            ? args && args.length
+            ? !isEmpty(args)
                 ? data.slice(0, args.length).reduce((data, value, index) => {
                     if (isPlainObject(value)) {
                         assign(data, value);

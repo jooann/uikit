@@ -1,10 +1,14 @@
-import {getPos, includes, isRtl, isTouch, off, on, pointerDown, pointerMove, pointerUp, preventClick, trigger} from 'uikit-util';
+import {closest, css, getEventPos, includes, isRtl, isTouch, noop, off, on, pointerCancel, pointerDown, pointerMove, pointerUp, selInput, trigger} from 'uikit-util';
 
 export default {
 
+    props: {
+        draggable: Boolean
+    },
+
     data: {
-        threshold: 10,
-        preventCatch: false
+        draggable: true,
+        threshold: 10
     },
 
     created() {
@@ -14,7 +18,7 @@ export default {
             const fn = this[key];
             this[key] = e => {
 
-                const pos = getPos(e).x * (isRtl ? -1 : 1);
+                const pos = getEventPos(e).x * (isRtl ? -1 : 1);
 
                 this.prevPos = pos !== this.pos ? this.pos : this.prevPos;
                 this.pos = pos;
@@ -33,15 +37,16 @@ export default {
             name: pointerDown,
 
             delegate() {
-                return this.slidesSelector;
+                return this.selSlides;
             },
 
             handler(e) {
 
-                if (!isTouch(e) && hasTextNodesOnly(e.target)
+                if (!this.draggable
+                    || !isTouch(e) && hasTextNodesOnly(e.target)
+                    || closest(e.target, selInput)
                     || e.button > 0
                     || this.length < 2
-                    || this.preventCatch
                 ) {
                     return;
                 }
@@ -58,8 +63,11 @@ export default {
             name: 'touchmove',
             passive: false,
             handler: 'move',
+            filter() {
+                return pointerMove === 'touchmove';
+            },
             delegate() {
-                return this.slidesSelector;
+                return this.selSlides;
             }
 
         },
@@ -97,13 +105,18 @@ export default {
             }
 
             // See above workaround notice
-            const off = on(document, pointerMove.replace(' touchmove', ''), this.move, {passive: false});
+            const off = pointerMove !== 'touchmove'
+                ? on(document, pointerMove, this.move, {passive: false})
+                : noop;
             this.unbindMove = () => {
                 off();
                 this.unbindMove = null;
             };
             on(window, 'scroll', this.unbindMove);
-            on(document, pointerUp, this.end, true);
+            on(window.visualViewport, 'resize', this.unbindMove);
+            on(document, `${pointerUp} ${pointerCancel}`, this.end, true);
+
+            css(this.list, 'userSelect', 'none');
 
         },
 
@@ -119,6 +132,8 @@ export default {
             if (distance === 0 || this.prevPos === this.pos || !this.dragging && Math.abs(distance) < this.threshold) {
                 return;
             }
+
+            css(this.list, 'pointerEvents', 'none');
 
             e.cancelable && e.preventDefault();
 
@@ -185,6 +200,7 @@ export default {
         end() {
 
             off(window, 'scroll', this.unbindMove);
+            off(window.visualViewport, 'resize', this.unbindMove);
             this.unbindMove && this.unbindMove();
             off(document, pointerUp, this.end, true);
 
@@ -209,9 +225,9 @@ export default {
                     this.show(this.dir > 0 && !dirChange || this.dir < 0 && dirChange ? 'next' : 'previous', true);
                 }
 
-                preventClick();
-
             }
+
+            css(this.list, {userSelect: '', pointerEvents: ''});
 
             this.drag
                 = this.percent

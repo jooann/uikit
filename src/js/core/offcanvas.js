@@ -1,5 +1,5 @@
 import Modal from '../mixin/modal';
-import {$, addClass, css, hasClass, height, isTouch, removeClass, trigger, unwrap, wrapAll} from 'uikit-util';
+import {$, addClass, append, css, endsWith, hasClass, height, removeClass, unwrap, wrapAll} from 'uikit-util';
 
 export default {
 
@@ -25,7 +25,8 @@ export default {
         clsSidebarAnimation: 'uk-offcanvas-bar-animation',
         clsMode: 'uk-offcanvas',
         clsOverlay: 'uk-offcanvas-overlay',
-        selClose: '.uk-offcanvas-close'
+        selClose: '.uk-offcanvas-close',
+        container: false
     },
 
     computed: {
@@ -66,8 +67,8 @@ export default {
                 return 'a[href^="#"]';
             },
 
-            handler({current}) {
-                if (current.hash && $(current.hash, document.body)) {
+            handler({current: {hash}, defaultPrevented}) {
+                if (!defaultPrevented && hash && $(hash, document.body)) {
                     this.hide();
                 }
             }
@@ -76,6 +77,8 @@ export default {
 
         {
             name: 'touchstart',
+
+            passive: true,
 
             el() {
                 return this.panel;
@@ -95,15 +98,14 @@ export default {
             name: 'touchmove',
 
             self: true,
+            passive: false,
 
             filter() {
                 return this.overlay;
             },
 
-            passive: false,
-
             handler(e) {
-                e.preventDefault();
+                e.cancelable && e.preventDefault();
             }
 
         },
@@ -111,11 +113,11 @@ export default {
         {
             name: 'touchmove',
 
+            passive: false,
+
             el() {
                 return this.panel;
             },
-
-            passive: false,
 
             handler(e) {
 
@@ -126,10 +128,11 @@ export default {
                 const clientY = event.targetTouches[0].clientY - this.clientY;
                 const {scrollTop, scrollHeight, clientHeight} = this.panel;
 
-                if (scrollTop === 0 && clientY > 0
+                if (clientHeight >= scrollHeight
+                    || scrollTop === 0 && clientY > 0
                     || scrollHeight - scrollTop <= clientHeight && clientY < 0
                 ) {
-                    e.preventDefault();
+                    e.cancelable && e.preventDefault();
                 }
 
             }
@@ -150,12 +153,16 @@ export default {
 
                 css(document.documentElement, 'overflowY', this.overlay ? 'hidden' : '');
                 addClass(document.body, this.clsContainer, this.clsFlip);
+                css(document.body, 'touch-action', 'pan-y pinch-zoom');
+                css(this.$el, 'display', 'block');
+                addClass(this.$el, this.clsOverlay);
+                addClass(this.panel, this.clsSidebarAnimation, this.mode !== 'reveal' ? this.clsMode : '');
+
                 height(document.body); // force reflow
                 addClass(document.body, this.clsContainerAnimation);
-                addClass(this.panel, this.clsSidebarAnimation, this.mode !== 'reveal' ? this.clsMode : '');
-                addClass(this.$el, this.clsOverlay);
-                css(this.$el, 'display', 'block');
-                height(this.$el); // force reflow
+
+                this.clsContainerAnimation && suppressUserScale();
+
 
             }
         },
@@ -167,11 +174,7 @@ export default {
 
             handler() {
                 removeClass(document.body, this.clsContainerAnimation);
-
-                const active = this.getActive();
-                if (this.mode === 'none' || active && active !== this && active !== this.prev) {
-                    trigger(this.panel, 'transitionend');
-                }
+                css(document.body, 'touch-action', '');
             }
         },
 
@@ -181,6 +184,8 @@ export default {
             self: true,
 
             handler() {
+
+                this.clsContainerAnimation && resumeUserScale();
 
                 if (this.mode === 'reveal') {
                     unwrap(this.panel);
@@ -201,7 +206,7 @@ export default {
 
             handler(e) {
 
-                if (this.isToggled() && isTouch(e) && (e.type === 'swipeLeft' && !this.flip || e.type === 'swipeRight' && this.flip)) {
+                if (this.isToggled() && endsWith(e.type, 'Left') ^ this.flip) {
                     this.hide();
                 }
 
@@ -211,3 +216,17 @@ export default {
     ]
 
 };
+
+// Chrome in responsive mode zooms page upon opening offcanvas
+function suppressUserScale() {
+    getViewport().content += ',user-scalable=0';
+}
+
+function resumeUserScale() {
+    const viewport = getViewport();
+    viewport.content = viewport.content.replace(/,user-scalable=0$/, '');
+}
+
+function getViewport() {
+    return $('meta[name="viewport"]', document.head) || append(document.head, '<meta name="viewport">');
+}

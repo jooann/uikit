@@ -1,23 +1,28 @@
-import {$$, addClass, css, hasTouch, on, ready, removeClass, toMs, within} from 'uikit-util';
+import {css, fastdom, getEventPos, inBrowser, isTouch, on, once, pointerCancel, pointerDown, pointerUp, ready, toMs, trigger} from 'uikit-util';
 
 export default function (UIkit) {
 
-    ready(() => {
+    inBrowser && ready(() => {
 
         UIkit.update();
+        on(window, 'load resize', () => UIkit.update(null, 'resize'));
+        on(document, 'loadedmetadata load', ({target}) => UIkit.update(target, 'resize'), true);
 
-        let scroll = 0;
-        let started = 0;
-
-        on(window, 'load resize', e => UIkit.update(null, e));
+        // throttle `scroll` event (Safari triggers multiple `scroll` events per frame)
+        let pending;
         on(window, 'scroll', e => {
-            const {target} = e;
-            e.dir = scroll <= window.pageYOffset ? 'down' : 'up';
-            e.pageYOffset = scroll = window.pageYOffset;
-            UIkit.update(target.nodeType !== 1 ? document.body : target, e);
-        }, {passive: true, capture: true});
-        on(document, 'loadedmetadata load', ({target}) => UIkit.update(target, 'load'), true);
 
+            if (pending) {
+                return;
+            }
+            pending = true;
+            fastdom.write(() => pending = false);
+
+            UIkit.update(null, e.type);
+
+        }, {passive: true, capture: true});
+
+        let started = 0;
         on(document, 'animationstart', ({target}) => {
             if ((css(target, 'animationName') || '').match(/^uk-.*(left|right)/)) {
 
@@ -31,28 +36,46 @@ export default function (UIkit) {
             }
         }, true);
 
-        if (!hasTouch) {
-            return;
-        }
+        let off;
+        on(document, pointerDown, e => {
 
-        const cls = 'uk-hover';
+            off && off();
 
-        on(document, 'tap', ({target}) =>
-            $$(`.${cls}`).forEach(el =>
-                !within(target, el) && removeClass(el, cls)
-            )
-        );
-
-        Object.defineProperty(UIkit, 'hoverSelector', {
-
-            set(selector) {
-                on(document, 'tap', selector, ({current}) => addClass(current, cls));
+            if (!isTouch(e)) {
+                return;
             }
 
-        });
+            // Handle Swipe Gesture
+            const pos = getEventPos(e);
+            const target = 'tagName' in e.target ? e.target : e.target.parentNode;
+            off = once(document, `${pointerUp} ${pointerCancel}`, e => {
 
-        UIkit.hoverSelector = '.uk-animation-toggle, .uk-transition-toggle, [uk-hover]';
+                const {x, y} = getEventPos(e);
+
+                // swipe
+                if (target && x && Math.abs(pos.x - x) > 100 || y && Math.abs(pos.y - y) > 100) {
+
+                    setTimeout(() => {
+                        trigger(target, 'swipe');
+                        trigger(target, `swipe${swipeDirection(pos.x, pos.y, x, y)}`);
+                    });
+
+                }
+
+            });
+
+        }, {passive: true});
 
     });
 
+}
+
+function swipeDirection(x1, y1, x2, y2) {
+    return Math.abs(x1 - x2) >= Math.abs(y1 - y2)
+        ? x1 - x2 > 0
+            ? 'Left'
+            : 'Right'
+        : y1 - y2 > 0
+            ? 'Up'
+            : 'Down';
 }

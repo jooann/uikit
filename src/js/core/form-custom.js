@@ -1,5 +1,5 @@
 import Class from '../mixin/class';
-import {$, $$, includes, isInput, matches, query, selInput, toggleClass} from 'uikit-util';
+import {$, $$, closest, isInput, matches, query, selInput} from 'uikit-util';
 
 export default {
 
@@ -47,7 +47,7 @@ export default {
         const prev = target[prop];
         const value = input.files && input.files[0]
             ? input.files[0].name
-            : matches(input, 'select') && (option = $$('option', input).filter(el => el.selected)[0])
+            : matches(input, 'select') && (option = $$('option', input).filter(el => el.selected)[0]) // eslint-disable-line prefer-destructuring
                 ? option.textContent
                 : input.value;
 
@@ -60,31 +60,23 @@ export default {
     events: [
 
         {
-
-            name: 'focusin focusout mouseenter mouseleave',
-
-            delegate: selInput,
-
-            handler({type, current}) {
-                if (current === this.input) {
-                    toggleClass(
-                        this.state,
-                        `uk-${includes(type, 'focus') ? 'focus' : 'hover'}`,
-                        includes(['focusin', 'mouseenter'], type)
-                    );
-                }
-            }
-
-        },
-
-        {
-
             name: 'change',
 
             handler() {
-                this.$emit();
+                this.$update();
             }
+        },
 
+        {
+            name: 'reset',
+
+            el() {
+                return closest(this.$el, 'form');
+            },
+
+            handler() {
+                this.$update();
+            }
         }
 
     ]

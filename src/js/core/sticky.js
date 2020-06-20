@@ -1,6 +1,6 @@
 import Class from '../mixin/class';
 import Media from '../mixin/media';
-import {$, addClass, after, Animation, assign, attr, css, fastdom, hasClass, height, isNumeric, isString, isUndefined, isVisible, noop, offset, query, remove, removeClass, replaceClass, scrollTop, toFloat, toggleClass, trigger, within} from 'uikit-util';
+import {$, addClass, after, Animation, assign, attr, css, fastdom, hasClass, inBrowser, isNumeric, isString, isVisible, noop, offset, offsetPosition, query, remove, removeClass, replaceClass, scrollTop, toFloat, toggleClass, toPx, trigger, within} from 'uikit-util';
 
 export default {
 
@@ -9,7 +9,7 @@ export default {
     props: {
         top: null,
         bottom: Boolean,
-        offset: Number,
+        offset: String,
         animation: String,
         clsActive: String,
         clsInactive: String,
@@ -38,24 +38,47 @@ export default {
 
     computed: {
 
+        offset({offset}) {
+            return toPx(offset);
+        },
+
         selTarget({selTarget}, $el) {
             return selTarget && $(selTarget, $el) || $el;
         },
 
         widthElement({widthElement}, $el) {
             return query(widthElement, $el) || this.placeholder;
+        },
+
+        isActive: {
+
+            get() {
+                return hasClass(this.selTarget, this.clsActive);
+            },
+
+            set(value) {
+                if (value && !this.isActive) {
+                    replaceClass(this.selTarget, this.clsInactive, this.clsActive);
+                    trigger(this.$el, 'active');
+                } else if (!value && !hasClass(this.selTarget, this.clsInactive)) {
+                    replaceClass(this.selTarget, this.clsActive, this.clsInactive);
+                    trigger(this.$el, 'inactive');
+                }
+            }
+
         }
 
     },
 
     connected() {
         this.placeholder = $('+ .uk-sticky-placeholder', this.$el) || $('<div class="uk-sticky-placeholder"></div>');
+        this.isFixed = false;
+        this.isActive = false;
     },
 
     disconnected() {
 
-        if (this.isActive) {
-            this.isActive = undefined;
+        if (this.isFixed) {
             this.hide();
             removeClass(this.selTarget, this.clsInactive);
         }
@@ -68,32 +91,10 @@ export default {
     events: [
 
         {
-            name: 'active',
-
-            self: true,
-
-            handler() {
-                replaceClass(this.selTarget, this.clsInactive, this.clsActive);
-            }
-
-        },
-
-        {
-            name: 'inactive',
-
-            self: true,
-
-            handler() {
-                replaceClass(this.selTarget, this.clsActive, this.clsInactive);
-            }
-
-        },
-
-        {
 
             name: 'load hashchange popstate',
 
-            el: window,
+            el: inBrowser && window,
 
             handler() {
 
@@ -110,7 +111,7 @@ export default {
                         const elTop = offset(this.$el).top;
                         const elHeight = this.$el.offsetHeight;
 
-                        if (this.isActive && elTop + elHeight >= top && elTop <= top + target.offsetHeight) {
+                        if (this.isFixed && elTop + elHeight >= top && elTop <= top + target.offsetHeight) {
                             scrollTop(window, top - elHeight - (isNumeric(this.targetOffset) ? this.targetOffset : 0) - this.offset);
                         }
 
@@ -127,20 +128,27 @@ export default {
 
         {
 
-            read({height}, {type}) {
+            read({height}, type) {
 
-                height = !this.isActive || type === 'resize' ? this.$el.offsetHeight : height;
+                if (this.isActive && type !== 'update') {
+                    this.hide();
+                    height = this.$el.offsetHeight;
+                    this.show();
+                }
 
-                this.topOffset = offset(this.isActive ? this.placeholder : this.$el).top;
+                height = !this.isActive ? this.$el.offsetHeight : height;
+
+                this.topOffset = offset(this.isFixed ? this.placeholder : this.$el).top;
                 this.bottomOffset = this.topOffset + height;
 
                 const bottom = parseProp('bottom', this);
 
                 this.top = Math.max(toFloat(parseProp('top', this)), this.topOffset) - this.offset;
-                this.bottom = bottom && bottom - height;
+                this.bottom = bottom && bottom - this.$el.offsetHeight;
                 this.inactive = !this.matchMedia;
 
                 return {
+                    lastScroll: false,
                     height,
                     margins: css(this.$el, ['marginTop', 'marginBottom', 'marginLeft', 'marginRight'])
                 };
@@ -157,44 +165,68 @@ export default {
                     attr(placeholder, 'hidden', '');
                 }
 
-                if (isUndefined(this.isActive)) {
-                    this.hide();
-                }
+                this.isActive = !!this.isActive; // force self-assign
 
             },
 
-            events: ['load', 'resize']
+            events: ['resize']
 
         },
 
         {
 
-            read(_, {scrollY = window.pageYOffset}) {
+            read({scroll = 0}) {
 
-                this.width = (isVisible(this.widthElement) ? this.widthElement : this.$el).offsetWidth;
+                this.width = offset(isVisible(this.widthElement) ? this.widthElement : this.$el).width;
+
+                this.scroll = window.pageYOffset;
 
                 return {
-                    scroll: this.scroll = scrollY,
-                    visible: isVisible(this.$el)
+                    dir: scroll <= this.scroll ? 'down' : 'up',
+                    scroll: this.scroll,
+                    visible: isVisible(this.$el),
+                    top: offsetPosition(this.placeholder)[0]
                 };
             },
 
-            write({visible, scroll}, {dir} = {}) {
+            write(data, type) {
 
-                if (scroll < 0 || !visible || this.disabled || this.showOnUp && !dir) {
+                const {initTimestamp = 0, dir, lastDir, lastScroll, scroll, top, visible} = data;
+                const now = performance.now();
+
+                data.lastScroll = scroll;
+
+                if (scroll < 0 || scroll === lastScroll || !visible || this.disabled || this.showOnUp && type !== 'scroll') {
+                    return;
+                }
+
+                if (now - initTimestamp > 300 || dir !== lastDir) {
+                    data.initScroll = scroll;
+                    data.initTimestamp = now;
+                }
+
+                data.lastDir = dir;
+
+                if (this.showOnUp && !this.isFixed && Math.abs(data.initScroll - scroll) <= 30 && Math.abs(lastScroll - scroll) <= 10) {
                     return;
                 }
 
                 if (this.inactive
                     || scroll < this.top
-                    || this.showOnUp && (scroll <= this.top || dir === 'down' || dir === 'up' && !this.isActive && scroll <= this.bottomOffset)
+                    || this.showOnUp && (scroll <= this.top || dir === 'down' || dir === 'up' && !this.isFixed && scroll <= this.bottomOffset)
                 ) {
 
-                    if (!this.isActive) {
+                    if (!this.isFixed) {
+
+                        if (Animation.inProgress(this.$el) && top > scroll) {
+                            Animation.cancel(this.$el);
+                            this.hide();
+                        }
+
                         return;
                     }
 
-                    this.isActive = false;
+                    this.isFixed = false;
 
                     if (this.animation && scroll > this.topOffset) {
                         Animation.cancel(this.$el);
@@ -203,7 +235,7 @@ export default {
                         this.hide();
                     }
 
-                } else if (this.isActive) {
+                } else if (this.isFixed) {
 
                     this.update();
 
@@ -219,9 +251,9 @@ export default {
 
             },
 
-            events: ['load', 'resize', 'scroll']
+            events: ['resize', 'scroll']
 
-        },
+        }
 
     ],
 
@@ -229,7 +261,7 @@ export default {
 
         show() {
 
-            this.isActive = true;
+            this.isFixed = true;
             this.update();
             attr(this.placeholder, 'hidden', null);
 
@@ -237,10 +269,7 @@ export default {
 
         hide() {
 
-            if (!this.isActive || hasClass(this.selTarget, this.clsActive)) {
-                trigger(this.$el, 'inactive');
-            }
-
+            this.isActive = false;
             removeClass(this.$el, this.clsFixed, this.clsBelow);
             css(this.$el, {position: '', top: '', width: ''});
             attr(this.placeholder, 'hidden', '');
@@ -252,7 +281,7 @@ export default {
             const active = this.top !== 0 || this.scroll > this.top;
             let top = Math.max(0, this.offset);
 
-            if (this.bottom && this.scroll > this.bottom - this.offset) {
+            if (isNumeric(this.bottom) && this.scroll > this.bottom - this.offset) {
                 top = this.bottom - this.scroll;
             }
 
@@ -262,16 +291,7 @@ export default {
                 width: this.width
             });
 
-            if (hasClass(this.selTarget, this.clsActive)) {
-
-                if (!active) {
-                    trigger(this.$el, 'inactive');
-                }
-
-            } else if (active) {
-                trigger(this.$el, 'active');
-            }
-
+            this.isActive = active;
             toggleClass(this.$el, this.clsBelow, this.scroll > this.bottomOffset);
             addClass(this.$el, this.clsFixed);
 
@@ -289,21 +309,13 @@ function parseProp(prop, {$props, $el, [`${prop}Offset`]: propOffset}) {
         return;
     }
 
-    if (isNumeric(value)) {
+    if (isString(value) && value.match(/^-?\d/)) {
 
-        return propOffset + toFloat(value);
-
-    } else if (isString(value) && value.match(/^-?\d+vh$/)) {
-
-        return height(window) * toFloat(value) / 100;
+        return propOffset + toPx(value);
 
     } else {
 
-        const el = value === true ? $el.parentNode : query(value, $el);
-
-        if (el) {
-            return offset(el).top + el.offsetHeight;
-        }
+        return offset(value === true ? $el.parentNode : query(value, $el)).bottom;
 
     }
 }

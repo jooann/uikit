@@ -1,4 +1,4 @@
-import {createEvent, clamp, css, Deferred, noop, Promise, Transition, trigger} from 'uikit-util';
+import {clamp, createEvent, css, Deferred, noop, Promise, Transition, trigger} from 'uikit-util';
 
 export default function Transitioner(prev, next, dir, {animation, easing}) {
 
@@ -68,7 +68,7 @@ export default function Transitioner(prev, next, dir, {animation, easing}) {
         },
 
         getDistance() {
-            return prev.offsetWidth;
+            return prev && prev.offsetWidth;
         }
 
     };
